@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>مراقبة البيبي الذكية 👶📹</title>
+    
+    <!-- Tailwind CSS للتصميم المتجاوب -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- خط Cairo العربي -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- مكتبة PeerJS للبث المباشر WebRTC -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #070b14;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+        }
+        /* فيديو البث المباشر بالحجم الطبيعي بدون قص */
+        video {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            transform-origin: center center;
+            transition: transform 0.1s ease-out;
+        }
+        /* تأثير النبض لعلامة البث المباشر */
+        @keyframes live-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.2); }
+        }
+        .live-dot {
+            animation: live-pulse 1.5s infinite ease-in-out;
+        }
+        /* تأثير وميض عند اكتشاف حركة */
+        @keyframes motion-alert-border {
+            0%, 100% { border-color: #f43f5e; box-shadow: 0 0 25px rgba(244, 63, 94, 0.7); }
+            50% { border-color: #fbbf24; box-shadow: 0 0 10px rgba(251, 191, 36, 0.4); }
+        }
+        .motion-detected-frame {
+            animation: motion-alert-border 0.8s infinite;
+        }
+        /* منع تحديد النص عند الضغط المطول على زر التحدث */
+        .no-callout {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-3 sm:p-4 max-w-md mx-auto select-none">
+
+    <!-- الهيدر وشريط الحالة -->
+    <header class="w-full pt-1 pb-2 text-center">
+        <div class="inline-flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 px-4 py-1.5 rounded-full mb-1.5 shadow-md">
+            <span id="status-dot" class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <span id="status-text" class="text-xs font-bold text-slate-200">اختر وظيفة كل موبايل للبدء</span>
+        </div>
+        <h1 class="text-xl sm:text-2xl font-extrabold text-white tracking-tight">مراقبة البيبي الذكية 👶📹</h1>
+    </header>
+
+    <!-- إشعارات عائمة أنيقة (بديل alert) -->
+    <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 hidden font-bold px-5 py-3 rounded-2xl shadow-2xl text-center text-sm transition-all duration-300 w-11/12 max-w-sm"></div>
+
+    <!-- الشاشة الرئيسية: اختيار الموبايل -->
+    <main id="screen-home" class="flex-1 flex flex-col justify-center gap-4 my-2">
+        
+        <!-- الموبايل الأول: أندرويد (الكاميرا عند البيبي) -->
+        <button onclick="startBabyCamMode()" class="w-full bg-gradient-to-br from-emerald-900/90 to-teal-950 hover:from-emerald-800 hover:to-teal-900 active:scale-95 transition-all p-5 rounded-3xl shadow-xl border border-emerald-500/40 flex items-center justify-between text-right">
+            <div>
+                <span class="inline-block bg-emerald-500/20 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full mb-1.5">الموبايل الأول (عند البيبي)</span>
+                <h2 class="text-xl font-extrabold text-white">📱 كاميرا البيبي (الأندرويد)</h2>
+                <p class="text-emerald-200/80 text-xs mt-1">بث صوت وصورة + استقبال صوتك للبيبي</p>
+            </div>
+            <div class="text-3xl bg-emerald-500/20 p-3.5 rounded-2xl">🎥</div>
+        </button>
+
+        <!-- الموبايل الثاني: آيفون (شاشة المراقبة معاك) -->
+        <button onclick="startParentMonitorMode()" class="w-full bg-gradient-to-br from-indigo-900/90 to-slate-900 hover:from-indigo-800 hover:to-slate-800 active:scale-95 transition-all p-5 rounded-3xl shadow-xl border border-indigo-500/40 flex items-center justify-between text-right">
+            <div>
+                <span class="inline-block bg-indigo-500/20 text-indigo-300 text-xs font-bold px-3 py-1 rounded-full mb-1.5">الموبايل الثاني (معاك)</span>
+                <h2 class="text-xl font-extrabold text-white">🍎 شاشة المراقبة (الآيفون)</h2>
+                <p class="text-indigo-200/80 text-xs mt-1">مشاهدة + تحدث بالمايك + زوم + استشعار حركة</p>
+            </div>
+            <div class="text-3xl bg-indigo-500/20 p-3.5 rounded-2xl">👀</div>
+        </button>
+
+        <!-- تنبيه هام بخصوص HTTPS وصلاحية الكاميرا -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-400 leading-relaxed text-center">
+            ⚠️ <strong class="text-slate-200">تنبيه:</strong> لفتح الكاميرا والمايك على الموبايل، يجب فتح الصفحة عبر رابط آمن (<strong class="text-emerald-400">HTTPS</strong>) مثل GitHub Pages.
+        </div>
+    </main>
+
+    <!-- ========================================================== -->
+    <!-- شاشة 1: كاميرا البيبي (موبايل الأندرويد - البث) -->
+    <!-- ========================================================== -->
+    <section id="screen-camera" class="hidden flex-1 flex flex-col gap-3">
+        
+        <!-- بطاقة كود الغرفة المكون من 4 أرقام -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 text-center shadow-lg">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-xs text-slate-400 font-bold">كود الربط (اكتبه في الآيفون):</span>
+                <span id="cam-conn-badge" class="text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full font-bold">في انتظار الآيفون...</span>
+            </div>
+            <div class="bg-black/60 border border-dashed border-emerald-500/50 rounded-2xl py-2 px-4 mt-2 flex items-center justify-center gap-4">
+                <span id="room-code-display" class="text-4xl font-extrabold tracking-[0.25em] text-emerald-400 select-all">----</span>
+                <button onclick="copyRoomCode()" class="bg-slate-800 hover:bg-slate-700 text-xs text-white px-3 py-2 rounded-xl border border-slate-700 active:scale-95">
+                    نسخ
+                </button>
+            </div>
+        </div>
+
+        <!-- معاينة الكاميرا الحية على الأندرويد -->
+        <div class="relative w-full aspect-video bg-black rounded-3xl overflow-hidden border border-slate-800 shadow-xl">
+            <video id="local-video" class="object-contain" autoplay playsinline muted></video>
+            <!-- عنصر صوت مخفي لتشغيل صوت الأب/الأم القادم من الآيفون -->
+            <audio id="parent-voice-audio" autoplay playsinline></audio>
+            
+            <div class="absolute top-3 right-3 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full flex items-center gap-2 border border-white/10">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 live-dot"></span>
+                <span class="text-xs font-bold text-white">الكاميرا شغالة</span>
+            </div>
+
+            <!-- مؤشر يظهر على الأندرويد عندما يتحدث الأب من الآيفون -->
+            <div id="android-talking-indicator" class="hidden absolute bottom-3 left-1/2 -translate-x-1/2 bg-indigo-600/95 text-white text-xs font-extrabold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-pulse">
+                <span>🗣️</span>
+                <span>صوتك واصل للبيبي الآن...</span>
+            </div>
+        </div>
+
+        <!-- أزرار التحكم في كاميرا الأندرويد -->
+        <div class="grid grid-cols-2 gap-2.5">
+            <button onclick="switchCamera()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-700 text-white font-bold py-3 px-3 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2">
+                <span>🔄</span>
+                <span>تبديل الكاميرا</span>
+            </button>
+
+            <button id="torch-btn" onclick="toggleTorch()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-700 text-white font-bold py-3 px-3 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2">
+                <span>🔦</span>
+                <span id="torch-text">الفلاش: مغلق</span>
+            </button>
+        </div>
+
+        <!-- زر إعتام الشاشة الليلي -->
+        <button onclick="enableNightDimmer()" class="w-full bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white font-extrabold py-3.5 rounded-2xl text-sm shadow-lg flex items-center justify-center gap-2">
+            <span>🌙</span>
+            <span>تعتيم الشاشة وتوفير البطارية (وضع النوم)</span>
+        </button>
+
+        <button onclick="resetApp()" class="w-full bg-slate-900 text-slate-400 py-2.5 rounded-2xl text-xs font-bold border border-slate-800 mt-auto">
+            ⏹️ إيقاف البث والرجوع للبداية
+        </button>
+    </section>
+
+    <!-- طبقة إعتام الشاشة الكاملة للأندرويد -->
+    <div id="night-dimmer-overlay" onclick="handleDimmerTap()" class="fixed inset-0 bg-black z-50 hidden flex-col items-center justify-center text-center p-6">
+        <div class="opacity-30 select-none">
+            <div class="text-4xl mb-3">🌙</div>
+            <p class="text-slate-400 text-sm font-bold">البث المباشر والصوت شغالين في الخلفية...</p>
+            <p class="text-slate-500 text-xs mt-2">اضغط مرتين بسرعة على الشاشة لإعادة الإضاءة</p>
+        </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- شاشة 2: شاشة المراقبة (موبايل الآيفون - المشاهدة والتحكم) -->
+    <!-- ========================================================== -->
+    <section id="screen-monitor" class="hidden flex-1 flex flex-col gap-2.5">
+        
+        <!-- صندوق إدخال الكود للاتصال بالأندرويد -->
+        <div id="monitor-connect-box" class="bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center shadow-lg my-auto">
+            <h3 class="text-lg font-bold text-white mb-1">اكتب الكود الظاهر على الأندرويد</h3>
+            <p class="text-xs text-slate-400 mb-4">المكون من 4 أرقام</p>
+            
+            <input type="tel" id="code-input" maxlength="4" placeholder="0000" class="w-full bg-black text-center text-4xl font-extrabold tracking-[0.5em] text-indigo-400 border-2 border-slate-700 focus:border-indigo-500 rounded-2xl py-4 mb-4 focus:outline-none select-text">
+            
+            <button id="connect-btn" onclick="connectToBabyCam()" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-extrabold py-4 rounded-2xl text-lg shadow-lg transition-all">
+                اتصال ومشاهدة البث 📹
+            </button>
+        </div>
+
+        <!-- مشغل الفيديو المباشر ولوحة التحكم للآيفون -->
+        <div id="monitor-player-box" class="hidden flex-1 flex flex-col gap-2.5">
+            
+            <!-- حاوية الفيديو مع دعم السحب (Pan) والزوم والحجم الطبيعي -->
+            <div id="video-wrapper" class="relative w-full h-60 sm:h-64 bg-black rounded-3xl overflow-hidden border-2 border-slate-800 shadow-2xl touch-none">
+                <!-- object-contain يعرض الصورة بالحجم الطبيعي الكامل بدون قص -->
+                <video id="remote-video" class="object-contain" autoplay playsinline muted></video>
+                
+                <!-- شارة البث المباشر + نسبة الزوم -->
+                <div class="absolute top-2.5 right-2.5 bg-black/75 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-2 border border-white/10 pointer-events-none">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 live-dot"></span>
+                    <span class="text-[11px] font-bold text-white">مباشر</span>
+                    <span id="zoom-badge" class="text-[11px] font-extrabold text-indigo-300 border-r border-white/20 pr-2">1.0x</span>
+                </div>
+
+                <!-- زر تبديل أبعاد الصورة: الحجم الطبيعي الكامل / ملء الإطار -->
+                <button onclick="toggleAspectFit()" id="aspect-fit-btn" class="absolute top-2.5 left-2.5 bg-black/75 backdrop-blur-md hover:bg-black text-white text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20 active:scale-95 z-10">
+                    🖼️ حجم طبيعي
+                </button>
+
+                <!-- شارة تنبيه الحركة على الشاشة -->
+                <div id="motion-alert-banner" class="hidden absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-rose-600/95 text-white text-xs font-extrabold px-4 py-1 rounded-full shadow-lg flex items-center gap-1.5 pointer-events-none">
+                    <span>🚨</span>
+                    <span>تم رصد حركة للبيبي!</span>
+                </div>
+
+                <!-- زر عائم لتفعيل الصوت بوضوح على الآيفون -->
+                <button id="unmute-overlay-btn" onclick="toggleAudioMute()" class="absolute inset-0 bg-black/65 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-white transition-all z-20">
+                    <span class="text-4xl bg-indigo-600 p-3.5 rounded-full shadow-xl animate-bounce">🔊</span>
+                    <span class="font-extrabold text-sm bg-black/80 px-4 py-1.5 rounded-full border border-white/20">اضغط هنا لسماع صوت البيبي</span>
+                </button>
+            </div>
+
+            <!-- شريط التحكم في الزوم (تقريب وتبعيد + سحب الصورة) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5">
+                <div class="flex items-center justify-between gap-2">
+                    <button onclick="adjustZoom(-0.5)" class="bg-slate-800 hover:bg-slate-700 active:scale-90 text-white font-extrabold w-9 h-9 rounded-xl border border-slate-700 flex items-center justify-center text-lg">
+                        −
+                    </button>
+                    <div class="flex-1 flex flex-col">
+                        <div class="flex justify-between text-[11px] text-slate-400 font-bold mb-1 px-1">
+                            <span>🔍 زوم (اسحب الصورة للتحريك)</span>
+                            <button onclick="resetZoom()" class="text-indigo-400 underline">إعادة ضبط (1x)</button>
+                        </div>
+                        <input type="range" id="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="setZoomLevel(this.value)" class="w-full accent-indigo-500 h-2 bg-slate-800 rounded-lg cursor-pointer">
+                    </div>
+                    <button onclick="adjustZoom(0.5)" class="bg-slate-800 hover:bg-slate-700 active:scale-90 text-white font-extrabold w-9 h-9 rounded-xl border border-slate-700 flex items-center justify-center text-lg">
+                        +
+                    </button>
+                </div>
+            </div>
+
+            <!-- قسم التحدث مع البيبي (Two-Way Audio) + سماع صوت البيبي -->
+            <div class="grid grid-cols-2 gap-2">
+                <!-- زر سماع صوت البيبي -->
+                <button id="mute-toggle-btn" onclick="toggleAudioMute()" class="bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-md flex items-center justify-center gap-1.5 transition-all">
+                    <span id="mute-icon" class="text-base">🔇</span>
+                    <span id="mute-label">اسمع البيبي</span>
+                </button>
+
+                <!-- زر التحدث مع البيبي (اضغط للتحدث / تبديل المايك) -->
+                <button id="talk-btn" onclick="toggleTalkToBaby()" class="no-callout bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-md flex items-center justify-center gap-1.5 transition-all border border-indigo-400/30">
+                    <span id="talk-icon" class="text-base">🎙️</span>
+                    <span id="talk-label">تحدث للبيبي (مغلق)</span>
+                </button>
+            </div>
+
+            <!-- رادار استشعار الحركة والتنبيه الصوتي -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base">📡</span>
+                        <div>
+                            <div class="text-xs font-extrabold text-white">تنبيه الحركة الذكي</div>
+                            <div id="motion-status-text" class="text-[10px] text-slate-400">متوقف حالياً</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <!-- اختيار حساسية الحركة -->
+                        <select id="motion-sensitivity" class="bg-slate-800 text-slate-200 text-[11px] font-bold px-2 py-1.5 rounded-xl border border-slate-700 focus:outline-none">
+                            <option value="45">حساسية منخفضة</option>
+                            <option value="28" selected>حساسية متوسطة</option>
+                            <option value="15">حساسية عالية</option>
+                        </select>
+
+                        <!-- زر تفعيل / إيقاف رادار الحركة -->
+                        <button id="motion-toggle-btn" onclick="toggleMotionDetection()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold px-3 py-1.5 rounded-xl border border-slate-600 active:scale-95">
+                            تفعيل
+                        </button>
+                    </div>
+                </div>
+
+                <!-- مؤشر مستوى الصوت + مؤشر الحركة -->
+                <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
+                    <div>
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-slate-400 font-bold">🎙️ الصوت:</span>
+                            <span id="noise-status" class="text-emerald-400 font-bold">هدوء</span>
+                        </div>
+                        <div class="w-full bg-black rounded-full h-2 overflow-hidden border border-slate-800">
+                            <div id="audio-meter-bar" class="bg-gradient-to-l from-rose-500 via-amber-400 to-emerald-500 h-full rounded-full transition-all duration-75" style="width: 2%"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-[10px] mb-1">
+                            <span class="text-slate-400 font-bold">🏃 الحركة:</span>
+                            <span id="motion-level-label" class="text-slate-400 font-bold">0%</span>
+                        </div>
+                        <div class="w-full bg-black rounded-full h-2 overflow-hidden border border-slate-800">
+                            <div id="motion-meter-bar" class="bg-gradient-to-l from-rose-500 via-orange-400 to-cyan-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- أزرار إضافية: لقطة شاشة + ملء الشاشة + تحديث -->
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="takeSnapshot()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-800 text-slate-200 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1">
+                    <span>📸</span>
+                    <span>صورة</span>
+                </button>
+                <button onclick="toggleFullscreen()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-800 text-slate-200 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1">
+                    <span>⛶</span>
+                    <span>تكبير</span>
+                </button>
+                <button onclick="reconnectMonitor()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 border border-slate-800 text-indigo-300 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1">
+                    <span>🔄</span>
+                    <span>تحديث</span>
+                </button>
+            </div>
+        </div>
+
+        <button onclick="resetApp()" class="w-full bg-slate-900 text-slate-400 py-2.5 rounded-2xl text-xs font-bold border border-slate-800 mt-auto">
+            ⬅️ رجوع للبداية
+        </button>
+    </section>
+
+    <!-- عناصر Canvas مخفية لالتقاط الصور وتحليل الحركة -->
+    <canvas id="snapshot-canvas" class="hidden"></canvas>
+    <canvas id="motion-canvas" width="64" height="48" class="hidden"></canvas>
+
+    <script>
+        // ==========================================
+        // إعدادات WebRTC و PeerJS الأساسية
+        // ==========================================
+        const ROOM_PREFIX = 'baby-cam-eg-';
+        const PEER_CONFIG = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
+        };
+
+        let peer = null;
+        let dataConn = null;
+        let mediaCall = null;
+        let talkCall = null; // مكالمة صوتية عكسية من الآيفون للأندرويد
+        let localStream = null;
+        let parentMicStream = null;
+        let isTalking = false;
+        let currentRoomCode = '';
+        let currentFacingMode = 'environment';
+        let isTorchOn = false;
+        let wakeLock = null;
+        let lastDimmerTap = 0;
+        let audioContext = null;
+        let audioAnalyser = null;
+
+        // متغيرات الزوم وتحريك الصورة (Pan & Zoom)
+        let currentZoom = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDraggingVideo = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let isNaturalFit = true; // true = object-contain (الحجم الطبيعي), false = object-cover
+
+        // متغيرات استشعار الحركة (Motion Detection)
+        let motionDetectionEnabled = false;
+        let motionInterval = null;
+        let prevFrameData = null;
+        let lastAlarmTime = 0;
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = `fixed top-4 left-1/2 -translate-x-1/2 z-50 font-bold px-5 py-3 rounded-2xl shadow-2xl text-center text-sm transition-all duration-300 w-11/12 max-w-sm ${
+                isError ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+            }`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
+        function updateStatus(text, colorClass) {
+            document.getElementById('status-text').textContent = text;
+            document.getElementById('status-dot').className = `w-3 h-3 rounded-full ${colorClass}`;
+        }
+
+        // ==========================================
+        // 1. وضع كاميرا البيبي (الأندرويد - المرسل)
+        // ==========================================
+        async function startBabyCamMode() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast('المتصفح يمنع الكاميرا! يجب فتح الصفحة عبر رابط HTTPS آمن.', true);
+                return;
+            }
+
+            updateStatus('جاري تشغيل الكاميرا والمايك...', 'bg-amber-400 animate-pulse');
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: currentFacingMode },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                const localVideo = document.getElementById('local-video');
+                localVideo.srcObject = localStream;
+
+                document.getElementById('screen-home').classList.add('hidden');
+                document.getElementById('screen-camera').classList.remove('hidden');
+
+                requestWakeLock();
+                initSenderPeer();
+
+            } catch (err) {
+                console.error('Camera error:', err);
+                updateStatus('تعذر فتح الكاميرا', 'bg-rose-500');
+                showToast('تأكد من السماح للكاميرا والمايك وفتح الصفحة برابط HTTPS', true);
+            }
+        }
+
+        function initSenderPeer() {
+            currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
+            const fullId = ROOM_PREFIX + currentRoomCode;
+
+            peer = new Peer(fullId, PEER_CONFIG);
+
+            peer.on('open', () => {
+                document.getElementById('room-code-display').textContent = currentRoomCode;
+                updateStatus('الكاميرا جاهزة • في انتظار الآيفون', 'bg-amber-400 animate-pulse');
+            });
+
+            // استقبال مكالمة صوتية عكسية عندما يتحدث الأب من الآيفون
+            peer.on('call', (incomingTalkCall) => {
+                incomingTalkCall.answer(); // الرد لاستقبال صوت الآيفون فقط
+                incomingTalkCall.on('stream', (parentAudioStream) => {
+                    const parentAudioEl = document.getElementById('parent-voice-audio');
+                    parentAudioEl.srcObject = parentAudioStream;
+                    parentAudioEl.play().catch(e => console.log('Parent audio play:', e));
+                });
+            });
+
+            // عندما يتصل الآيفون
+            peer.on('connection', (conn) => {
+                dataConn = conn;
+                conn.on('open', () => {
+                    updateStatus('متصل الآن - يبث مباشرة للآيفون 🔴', 'bg-emerald-400 live-dot');
+                    const badge = document.getElementById('cam-conn-badge');
+                    badge.textContent = 'متصل بالآيفون ✅';
+                    badge.className = 'text-xs bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full font-bold';
+                    showToast('الآيفون اتصل الآن وبيشوف البث! 👶');
+
+                    if (localStream) {
+                        mediaCall = peer.call(conn.peer, localStream);
+                    }
+                });
+
+                // استقبال الأوامر من الآيفون (طلب البث، الزوم الحقيقي، أو حالة التحدث)
+                conn.on('data', async (msg) => {
+                    if (msg === 'REQUEST_STREAM' && localStream) {
+                        mediaCall = peer.call(conn.peer, localStream);
+                    } else if (msg && msg.type === 'HARDWARE_ZOOM') {
+                        applyHardwareZoomOnAndroid(msg.value);
+                    } else if (msg && msg.type === 'TALK_STATUS') {
+                        const indicator = document.getElementById('android-talking-indicator');
+                        if (msg.active) {
+                            indicator.classList.remove('hidden');
+                        } else {
+                            indicator.classList.add('hidden');
+                        }
+                    }
+                });
+
+                conn.on('close', () => {
+                    updateStatus('انقطع الآيفون • في انتظار إعادة الاتصال', 'bg-amber-400');
+                    const badge = document.getElementById('cam-conn-badge');
+                    badge.textContent = 'في انتظار الآيفون...';
+                    badge.className = 'text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full font-bold';
+                });
+            });
+
+            peer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    peer.destroy();
+                    initSenderPeer();
+                } else {
+                    showToast('مشكلة في الاتصال بالشبكة، تأكد من الإنترنت', true);
+                }
+            });
+        }
+
+        // محاولة تطبيق الزوم البصري الحقيقي على عدسة الأندرويد إذا كانت الكاميرا تدعمه
+        async function applyHardwareZoomOnAndroid(zoomRatio) {
+            try {
+                if (!localStream) return;
+                const videoTrack = localStream.getVideoTracks()[0];
+                if (!videoTrack || !videoTrack.getCapabilities) return;
+                const caps = videoTrack.getCapabilities();
+                if (caps.zoom) {
+                    const clampedZoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, zoomRatio));
+                    await videoTrack.applyConstraints({ advanced: [{ zoom: clampedZoom }] });
+                }
+            } catch (e) {
+                // إذا لم يدعم الجهاز الزوم البصري، الزوم الرقمي على الآيفون يعمل تلقائياً
+            }
+        }
+
+        async function switchCamera() {
+            if (!localStream) return;
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            isTorchOn = false;
+            document.getElementById('torch-text').textContent = 'الفلاش: مغلق';
+
+            try {
+                localStream.getVideoTracks().forEach(track => track.stop());
+                const newVideoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: currentFacingMode } }
+                });
+                const newVideoTrack = newVideoStream.getVideoTracks()[0];
+
+                const audioTrack = localStream.getAudioTracks()[0];
+                localStream = new MediaStream([newVideoTrack, ...(audioTrack ? [audioTrack] : [])]);
+                document.getElementById('local-video').srcObject = localStream;
+
+                if (mediaCall && mediaCall.peerConnection) {
+                    const sender = mediaCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) {
+                        await sender.replaceTrack(newVideoTrack);
+                    }
+                }
+                showToast('تم تبديل الكاميرا 🔄');
+            } catch (e) {
+                showToast('تعذر تبديل الكاميرا على هذا الجهاز', true);
+            }
+        }
+
+        async function toggleTorch() {
+            if (!localStream) return;
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (!videoTrack) return;
+
+            try {
+                const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                if (!capabilities.torch) {
+                    showToast('الفلاش غير مدعوم في هذه الكاميرا', true);
+                    return;
+                }
+                isTorchOn = !isTorchOn;
+                await videoTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+                document.getElementById('torch-text').textContent = isTorchOn ? 'الفلاش: شغال 🔆' : 'الفلاش: مغلق';
+            } catch (err) {
+                showToast('تعذر التحكم في الفلاش', true);
+            }
+        }
+
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {}
+        }
+
+        function enableNightDimmer() {
+            document.getElementById('night-dimmer-overlay').classList.remove('hidden');
+            document.getElementById('night-dimmer-overlay').classList.add('flex');
+            requestWakeLock();
+        }
+
+        function handleDimmerTap() {
+            const now = Date.now();
+            if (now - lastDimmerTap < 450) {
+                document.getElementById('night-dimmer-overlay').classList.add('hidden');
+                document.getElementById('night-dimmer-overlay').classList.remove('flex');
+            }
+            lastDimmerTap = now;
+        }
+
+        function copyRoomCode() {
+            const temp = document.createElement('textarea');
+            temp.value = currentRoomCode;
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+            showToast('تم نسخ الكود: ' + currentRoomCode);
+        }
+
+        // ==========================================
+        // 2. وضع شاشة المراقبة (الآيفون - المستقبل)
+        // ==========================================
+        function startParentMonitorMode() {
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-monitor').classList.remove('hidden');
+            updateStatus('اكتب الكود لمشاهدة كاميرا البيبي', 'bg-indigo-400');
+            initVideoPanGestures();
+        }
+
+        function connectToBabyCam() {
+            const code = document.getElementById('code-input').value.trim();
+            if (code.length !== 4) {
+                showToast('من فضلك اكتب الـ 4 أرقام الظاهرين على الأندرويد', true);
+                return;
+            }
+
+            currentRoomCode = code;
+            const btn = document.getElementById('connect-btn');
+            btn.disabled = true;
+            btn.textContent = 'جاري الاتصال بالكاميرا... ⏳';
+            updateStatus('جاري الاتصال بكاميرا البيبي...', 'bg-amber-400 animate-pulse');
+
+            if (peer) peer.destroy();
+            peer = new Peer(PEER_CONFIG);
+
+            peer.on('open', () => {
+                peer.on('call', (incomingCall) => {
+                    mediaCall = incomingCall;
+                    incomingCall.answer();
+
+                    incomingCall.on('stream', (remoteStream) => {
+                        const remoteVideo = document.getElementById('remote-video');
+                        remoteVideo.srcObject = remoteStream;
+                        remoteVideo.play().catch(() => {});
+
+                        document.getElementById('monitor-connect-box').classList.add('hidden');
+                        document.getElementById('monitor-player-box').classList.remove('hidden');
+                        updateStatus('متصل • بث مباشر من غرفة البيبي 🟢', 'bg-emerald-400 live-dot');
+                        showToast('تم فتح البث المباشر بنجاح! 👶');
+
+                        setupAudioVisualizer(remoteStream);
+                    });
+                });
+
+                const targetId = ROOM_PREFIX + code;
+                dataConn = peer.connect(targetId, { reliable: true });
+
+                dataConn.on('open', () => {
+                    dataConn.send('REQUEST_STREAM');
+                });
+
+                dataConn.on('close', () => {
+                    updateStatus('انقطع البث عن الكاميرا', 'bg-rose-500');
+                    showToast('انقطع الاتصال بكاميرا البيبي', true);
+                });
+
+                setTimeout(() => {
+                    if (document.getElementById('monitor-player-box').classList.contains('hidden')) {
+                        btn.disabled = false;
+                        btn.textContent = 'اتصال ومشاهدة البث 📹';
+                        updateStatus('لم يتم العثور على الكاميرا، تأكد من الكود', 'bg-rose-500');
+                        showToast('تأكد من كتابة الكود صح وإن كاميرا الأندرويد مفتوحة', true);
+                    }
+                }, 9000);
+            });
+
+            peer.on('error', () => {
+                btn.disabled = false;
+                btn.textContent = 'اتصال ومشاهدة البث 📹';
+                updateStatus('خطأ في الاتصال، تأكد من الكود', 'bg-rose-500');
+                showToast('تعذر الاتصال، تأكد من الكود والإنترنت', true);
+            });
+        }
+
+        // ==========================================
+        // ميزة 1: التحدث مع البيبي من الآيفون (Two-Way Audio)
+        // ==========================================
+        async function toggleTalkToBaby() {
+            const btn = document.getElementById('talk-btn');
+            const icon = document.getElementById('talk-icon');
+            const label = document.getElementById('talk-label');
+
+            // تفعيل الصوت العام في المتصفح إذا كان معلقاً
+            initWebAudioContext();
+
+            if (!isTalking) {
+                try {
+                    if (!parentMicStream) {
+                        parentMicStream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true },
+                            video: false
+                        });
+                    }
+                    parentMicStream.getAudioTracks().forEach(t => t.enabled = true);
+
+                    // إرسال الصوت للأندرويد عبر مكالمة PeerJS
+                    const targetId = ROOM_PREFIX + currentRoomCode;
+                    if (!talkCall || !talkCall.open) {
+                        talkCall = peer.call(targetId, parentMicStream);
+                    }
+
+                    isTalking = true;
+                    if (dataConn && dataConn.open) {
+                        dataConn.send({ type: 'TALK_STATUS', active: true });
+                    }
+
+                    btn.className = 'no-callout bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-lg flex items-center justify-center gap-1.5 transition-all animate-pulse border border-rose-300';
+                    icon.textContent = '🗣️';
+                    label.textContent = 'المايك مفتوح (اضغط للإغلاق)';
+                    showToast('المايك مفتوح! صوتك واصل للبيبي الآن 🎙️');
+                } catch (err) {
+                    console.error('Mic error:', err);
+                    showToast('من فضلك اسمح للآيفون باستخدام الميكروفون للتحدث', true);
+                }
+            } else {
+                // كتم المايك وإيقاف الإرسال
+                if (parentMicStream) {
+                    parentMicStream.getAudioTracks().forEach(t => t.enabled = false);
+                }
+                isTalking = false;
+                if (dataConn && dataConn.open) {
+                    dataConn.send({ type: 'TALK_STATUS', active: false });
+                }
+
+                btn.className = 'no-callout bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-md flex items-center justify-center gap-1.5 transition-all border border-indigo-400/30';
+                icon.textContent = '🎙️';
+                label.textContent = 'تحدث للبيبي (مغلق)';
+                showToast('تم إغلاق المايك 🔇');
+            }
+        }
+
+        // ==========================================
+        // ميزة 2: الزوم الذكي، تحريك الصورة، والحجم الطبيعي
+        // ==========================================
+        function setZoomLevel(val) {
+            currentZoom = parseFloat(val);
+            document.getElementById('zoom-slider').value = currentZoom;
+            document.getElementById('zoom-badge').textContent = currentZoom.toFixed(1) + 'x';
+
+            // إعادة ضبط الإزاحة عند العودة للحجم الطبيعي 1x
+            if (currentZoom <= 1) {
+                panX = 0;
+                panY = 0;
+            }
+            applyVideoTransform();
+
+            // إرسال أمر الزوم البصري للأندرويد أيضاً للحصول على أعلى دقة
+            if (dataConn && dataConn.open) {
+                dataConn.send({ type: 'HARDWARE_ZOOM', value: currentZoom });
+            }
+        }
+
+        function adjustZoom(delta) {
+            const nextZoom = Math.min(4, Math.max(1, +(currentZoom + delta).toFixed(1)));
+            setZoomLevel(nextZoom);
+        }
+
+        function resetZoom() {
+            panX = 0;
+            panY = 0;
+            setZoomLevel(1);
+        }
+
+        function applyVideoTransform() {
+            const video = document.getElementById('remote-video');
+            video.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+        }
+
+        // سحب الصورة بإصبعك عند عمل زوم للتركيز على أي مكان
+        function initVideoPanGestures() {
+            const wrapper = document.getElementById('video-wrapper');
+            
+            wrapper.addEventListener('touchstart', (e) => {
+                if (currentZoom <= 1 || e.touches.length !== 1) return;
+                isDraggingVideo = true;
+                dragStartX = e.touches[0].clientX - panX;
+                dragStartY = e.touches[0].clientY - panY;
+            }, { passive: true });
+
+            wrapper.addEventListener('touchmove', (e) => {
+                if (!isDraggingVideo || currentZoom <= 1) return;
+                const maxPanX = (wrapper.clientWidth * (currentZoom - 1)) / 2;
+                const maxPanY = (wrapper.clientHeight * (currentZoom - 1)) / 2;
+                
+                panX = Math.max(-maxPanX, Math.min(maxPanX, e.touches[0].clientX - dragStartX));
+                panY = Math.max(-maxPanY, Math.min(maxPanY, e.touches[0].clientY - dragStartY));
+                applyVideoTransform();
+            }, { passive: true });
+
+            wrapper.addEventListener('touchend', () => {
+                isDraggingVideo = false;
+            });
+
+            // دعم السحب بالماوس أيضاً للكمبيوتر
+            wrapper.addEventListener('mousedown', (e) => {
+                if (currentZoom <= 1) return;
+                isDraggingVideo = true;
+                dragStartX = e.clientX - panX;
+                dragStartY = e.clientY - panY;
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!isDraggingVideo || currentZoom <= 1) return;
+                const maxPanX = (wrapper.clientWidth * (currentZoom - 1)) / 2;
+                const maxPanY = (wrapper.clientHeight * (currentZoom - 1)) / 2;
+                panX = Math.max(-maxPanX, Math.min(maxPanX, e.clientX - dragStartX));
+                panY = Math.max(-maxPanY, Math.min(maxPanY, e.clientY - dragStartY));
+                applyVideoTransform();
+            });
+            window.addEventListener('mouseup', () => {
+                isDraggingVideo = false;
+            });
+        }
+
+        // تبديل عرض الفيديو بين "الحجم الطبيعي الكامل" و "ملء الإطار"
+        function toggleAspectFit() {
+            const video = document.getElementById('remote-video');
+            const btn = document.getElementById('aspect-fit-btn');
+            isNaturalFit = !isNaturalFit;
+
+            if (isNaturalFit) {
+                video.classList.remove('object-cover');
+                video.classList.add('object-contain');
+                btn.textContent = '🖼️ حجم طبيعي';
+                showToast('عرض الصورة بالحجم الطبيعي الكامل بدون قص');
+            } else {
+                video.classList.remove('object-contain');
+                video.classList.add('object-cover');
+                btn.textContent = '📐 ملء الإطار';
+                showToast('عرض الصورة بملء الإطار');
+            }
+        }
+
+        // ==========================================
+        // ميزة 3: رادار استشعار الحركة والتنبيه الصوتي
+        // ==========================================
+        function initWebAudioContext() {
+            if (!audioContext) {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioCtx();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // إصدار صوت جرس تنبيه لطيف على الآيفون عند اكتشاف حركة
+        function playMotionAlarmSound() {
+            try {
+                initWebAudioContext();
+                const now = audioContext.currentTime;
+                
+                // نغمتين متتاليتين (Ding-Dong) واضحتين
+                [880, 1174.66].forEach((freq, idx) => {
+                    const osc = audioContext.createOscillator();
+                    const gain = audioContext.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.18);
+                    
+                    gain.gain.setValueAtTime(0.001, now + idx * 0.18);
+                    gain.gain.exponentialRampToValueAtTime(0.35, now + idx * 0.18 + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.18 + 0.45);
+                    
+                    osc.connect(gain);
+                    gain.connect(audioContext.destination);
+                    osc.start(now + idx * 0.18);
+                    osc.stop(now + idx * 0.18 + 0.48);
+                });
+            } catch (e) {
+                console.log('Alarm sound error:', e);
+            }
+        }
+
+        function toggleMotionDetection() {
+            const btn = document.getElementById('motion-toggle-btn');
+            const statusText = document.getElementById('motion-status-text');
+
+            initWebAudioContext();
+
+            if (!motionDetectionEnabled) {
+                motionDetectionEnabled = true;
+                prevFrameData = null;
+                btn.textContent = 'شغال ✅';
+                btn.className = 'bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl border border-emerald-400 active:scale-95';
+                statusText.textContent = 'يراقب أي حركة للبيبي الآن...';
+                statusText.className = 'text-[10px] text-emerald-400 font-bold';
+                showToast('تم تفعيل رادار استشعار الحركة والتنبيه الصوتي 📡');
+
+                motionInterval = setInterval(analyzeVideoMotion, 350);
+            } else {
+                motionDetectionEnabled = false;
+                clearInterval(motionInterval);
+                prevFrameData = null;
+                btn.textContent = 'تفعيل';
+                btn.className = 'bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold px-3 py-1.5 rounded-xl border border-slate-600 active:scale-95';
+                statusText.textContent = 'متوقف حالياً';
+                statusText.className = 'text-[10px] text-slate-400';
+                document.getElementById('video-wrapper').classList.remove('motion-detected-frame');
+                document.getElementById('motion-alert-banner').classList.add('hidden');
+                document.getElementById('motion-meter-bar').style.width = '0%';
+                document.getElementById('motion-level-label').textContent = '0%';
+                showToast('تم إيقاف تنبيه الحركة');
+            }
+        }
+
+        // تحليل الفروق بين إطارات الفيديو لاكتشاف الحركة بدقة
+        function analyzeVideoMotion() {
+            if (!motionDetectionEnabled) return;
+            const video = document.getElementById('remote-video');
+            if (video.readyState < 2 || !video.videoWidth) return;
+
+            const canvas = document.getElementById('motion-canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const currentFrame = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            if (prevFrameData) {
+                let changedPixels = 0;
+                const totalPixels = canvas.width * canvas.height;
+                const sensitivityThreshold = parseInt(document.getElementById('motion-sensitivity').value, 10);
+
+                for (let i = 0; i < currentFrame.length; i += 4) {
+                    const rDiff = Math.abs(currentFrame[i] - prevFrameData[i]);
+                    const gDiff = Math.abs(currentFrame[i + 1] - prevFrameData[i + 1]);
+                    const bDiff = Math.abs(currentFrame[i + 2] - prevFrameData[i + 2]);
+                    const avgDiff = (rDiff + gDiff + bDiff) / 3;
+
+                    if (avgDiff > sensitivityThreshold) {
+                        changedPixels++;
+                    }
+                }
+
+                const motionPercent = Math.min(100, Math.round((changedPixels / totalPixels) * 350));
+                document.getElementById('motion-meter-bar').style.width = motionPercent + '%';
+                document.getElementById('motion-level-label').textContent = motionPercent + '%';
+
+                const wrapper = document.getElementById('video-wrapper');
+                const banner = document.getElementById('motion-alert-banner');
+
+                // إذا تجاوزت الحركة الحد الطبيعي، أطلق التنبيه الصوتي والبصري
+                if (motionPercent >= 12) {
+                    wrapper.classList.add('motion-detected-frame');
+                    banner.classList.remove('hidden');
+
+                    const now = Date.now();
+                    // منع تكرار الجرس بشكل مزعج (كل 3.5 ثوانٍ كحد أقصى)
+                    if (now - lastAlarmTime > 3500) {
+                        lastAlarmTime = now;
+                        playMotionAlarmSound();
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    }
+                } else {
+                    wrapper.classList.remove('motion-detected-frame');
+                    banner.classList.add('hidden');
+                }
+            }
+
+            prevFrameData = new Uint8ClampedArray(currentFrame);
+        }
+
+        // ==========================================
+        // سماع صوت البيبي ومؤشر الصوت البصري
+        // ==========================================
+        function toggleAudioMute() {
+            const video = document.getElementById('remote-video');
+            const overlayBtn = document.getElementById('unmute-overlay-btn');
+            const toggleBtn = document.getElementById('mute-toggle-btn');
+            const icon = document.getElementById('mute-icon');
+            const label = document.getElementById('mute-label');
+
+            initWebAudioContext();
+
+            if (video.muted) {
+                video.muted = false;
+                video.play();
+                overlayBtn.classList.add('hidden');
+                toggleBtn.className = 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-md flex items-center justify-center gap-1.5 transition-all';
+                icon.textContent = '🔊';
+                label.textContent = 'صوت البيبي شغال';
+                showToast('تم تشغيل صوت غرفة البيبي 🔊');
+            } else {
+                video.muted = true;
+                toggleBtn.className = 'bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-extrabold py-3 px-2 rounded-2xl text-xs shadow-md flex items-center justify-center gap-1.5 transition-all';
+                icon.textContent = '🔇';
+                label.textContent = 'اسمع البيبي (مكتوم)';
+            }
+        }
+
+        function setupAudioVisualizer(stream) {
+            try {
+                if (!stream.getAudioTracks().length) return;
+                initWebAudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                audioAnalyser = audioContext.createAnalyser();
+                audioAnalyser.fftSize = 256;
+                source.connect(audioAnalyser);
+
+                const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                const meterBar = document.getElementById('audio-meter-bar');
+                const noiseStatus = document.getElementById('noise-status');
+
+                function updateMeter() {
+                    if (!audioAnalyser) return;
+                    audioAnalyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    const level = Math.min(100, Math.max(2, Math.round(average * 2.2)));
+                    
+                    meterBar.style.width = level + '%';
+                    if (level > 45) {
+                        noiseStatus.textContent = 'بكاء / صوت عالي! 👶';
+                        noiseStatus.className = 'text-rose-400 font-extrabold';
+                    } else if (level > 15) {
+                        noiseStatus.textContent = 'صوت خفيف';
+                        noiseStatus.className = 'text-amber-300 font-bold';
+                    } else {
+                        noiseStatus.textContent = 'هدوء 😴';
+                        noiseStatus.className = 'text-emerald-400 font-bold';
+                    }
+                    requestAnimationFrame(updateMeter);
+                }
+                updateMeter();
+            } catch (e) {}
+        }
+
+        function toggleFullscreen() {
+            const video = document.getElementById('remote-video');
+            if (video.webkitEnterFullscreen) {
+                video.webkitEnterFullscreen();
+            } else if (video.requestFullscreen) {
+                video.requestFullscreen();
+            }
+        }
+
+        function takeSnapshot() {
+            const video = document.getElementById('remote-video');
+            const canvas = document.getElementById('snapshot-canvas');
+            if (!video.videoWidth) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const link = document.createElement('a');
+            link.download = `baby-cam-${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            showToast('تم حفظ لقطة للبيبي 📸');
+        }
+
+        function reconnectMonitor() {
+            showToast('جاري تحديث البث... 🔄');
+            if (dataConn && dataConn.open) {
+                dataConn.send('REQUEST_STREAM');
+            } else if (currentRoomCode) {
+                document.getElementById('code-input').value = currentRoomCode;
+                connectToBabyCam();
+            }
+        }
+
+        function resetApp() {
+            if (motionInterval) clearInterval(motionInterval);
+            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            if (parentMicStream) parentMicStream.getTracks().forEach(track => track.stop());
+            if (wakeLock) wakeLock.release().catch(() => {});
+            if (mediaCall) mediaCall.close();
+            if (talkCall) talkCall.close();
+            if (dataConn) dataConn.close();
+            if (peer) peer.destroy();
+            location.reload();
+        }
+    </script>
+</body>
+</html>
